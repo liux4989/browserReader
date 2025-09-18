@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import type { HighlightData, HighlightSettings } from '../utils/types';
+import type { HighlightData, HighlightSettings } from './utils/types';
+import "./popup.css";
 
 interface PopupProps {}
 

@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { type HighlightSettings, type HighlightData, type HighlightColor } from '../utils/types';
+import { type HighlightSettings, type HighlightData, type HighlightColor } from './utils/types';
+import "./options.css";
 
 const Options: React.FC = () => {
   const [settings, setSettings] = useState<HighlightSettings>({

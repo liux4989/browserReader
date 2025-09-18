@@ -1,3 +1,13 @@
+export interface SerializedRange {
+  startXPath: string;
+  startOffset: number;
+  startTextIndex: number;
+  endXPath: string;
+  endOffset: number;
+  endTextIndex: number;
+  text: string;
+}
+
 export interface HighlightData {
   id: string;
   text: string;
@@ -5,13 +15,7 @@ export interface HighlightData {
   timestamp: number;
   color: string;
   note?: string;
-  range: {
-    startContainer: string;
-    startOffset: number;
-    endContainer: string;
-    endOffset: number;
-    commonAncestor: string;
-  };
+  range: SerializedRange;
 }
 
 export interface HighlightSettings {

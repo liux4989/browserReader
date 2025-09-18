@@ -221,6 +221,20 @@ class BackgroundService {
         .catch(error => sendResponse({ error: error.message }));
       return true;
     }
+
+    if (message.type === 'REMOVE_HIGHLIGHT') {
+      StorageManager.deleteHighlight(message.highlightId as string)
+        .then(() => sendResponse({ success: true }))
+        .catch(error => sendResponse({ error: error.message }));
+      return true;
+    }
+
+    if (message.type === 'UPDATE_HIGHLIGHT') {
+      StorageManager.saveHighlight(message.highlight as HighlightData)
+        .then(() => sendResponse({ success: true }))
+        .catch(error => sendResponse({ error: error.message }));
+      return true;
+    }
   }
 
   private setupStorageHandlers(): void {

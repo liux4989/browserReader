@@ -1,0 +1,1 @@
+- when select a short text, it select the whole sentences

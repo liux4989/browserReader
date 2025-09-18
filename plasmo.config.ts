@@ -19,7 +19,7 @@ export const manifest = {
   host_permissions: [
     "https://*/*"
   ],
-  action: {
+action: {
     default_popup: "popup.html",
     default_title: "Super highlight"
   },
