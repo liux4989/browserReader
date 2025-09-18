@@ -1,11 +1,11 @@
-import type { PlasmoCSConfig, PlasmoManifest } from "plasmo"
+import type { PlasmoCSConfig } from "plasmo"
 
 export const config: PlasmoCSConfig = {
   matches: ["<all_urls>"],
   all_frames: false
 }
 
-export const manifest: PlasmoManifest = {
+export const manifest = {
   manifest_version: 3,
   name: "Super highlight",
   version: "0.0.1",

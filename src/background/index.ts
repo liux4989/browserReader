@@ -214,6 +214,13 @@ class BackgroundService {
         .catch(error => sendResponse({ error: error.message }));
       return true;
     }
+
+    if (message.type === 'SAVE_HIGHLIGHT') {
+      StorageManager.saveHighlight(message.highlight as HighlightData)
+        .then(() => sendResponse({ success: true }))
+        .catch(error => sendResponse({ error: error.message }));
+      return true;
+    }
   }
 
   private setupStorageHandlers(): void {

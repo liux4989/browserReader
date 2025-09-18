@@ -1,7 +1,6 @@
 import React from 'react';
 import { createRoot } from 'react-dom/client';
-import Options from './options.tsx';
-import './options.css';
+import Options from './options';
 
 const container = document.getElementById('root');
 if (container) {
