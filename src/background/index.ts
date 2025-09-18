@@ -1,5 +1,5 @@
 import { StorageManager } from '../utils/storage';
-import { HighlightColor, HighlightData, HighlightSettings } from '../utils/types';
+import { type HighlightColor, type HighlightData, type HighlightSettings } from '../utils/types';
 
 class BackgroundService {
   constructor() {
@@ -165,7 +165,7 @@ class BackgroundService {
     message: { type: string; [key: string]: unknown },
     sender: chrome.runtime.MessageSender,
     sendResponse: (response?: { success?: boolean; error?: string; highlights?: HighlightData[]; settings?: HighlightSettings; data?: string }) => void
-  ): void {
+  ): boolean | void {
     if (message.type === 'GET_HIGHLIGHTS') {
       StorageManager.getHighlights()
         .then(highlights => sendResponse({ highlights }))
@@ -174,14 +174,14 @@ class BackgroundService {
     }
 
     if (message.type === 'GET_HIGHLIGHTS_BY_URL') {
-      StorageManager.getHighlightsByUrl(message.url)
+      StorageManager.getHighlightsByUrl(message.url as string)
         .then(highlights => sendResponse({ highlights }))
         .catch(error => sendResponse({ error: error.message }));
       return true;
     }
 
     if (message.type === 'DELETE_HIGHLIGHT') {
-      StorageManager.deleteHighlight(message.id)
+      StorageManager.deleteHighlight(message.id as string)
         .then(() => sendResponse({ success: true }))
         .catch(error => sendResponse({ error: error.message }));
       return true;
@@ -195,7 +195,7 @@ class BackgroundService {
     }
 
     if (message.type === 'SAVE_SETTINGS') {
-      StorageManager.saveSettings(message.settings)
+      StorageManager.saveSettings(message.settings as HighlightSettings)
         .then(() => sendResponse({ success: true }))
         .catch(error => sendResponse({ error: error.message }));
       return true;
@@ -209,7 +209,7 @@ class BackgroundService {
     }
 
     if (message.type === 'IMPORT_DATA') {
-      this.importData(message.data)
+      this.importData(message.data as string)
         .then(() => sendResponse({ success: true }))
         .catch(error => sendResponse({ error: error.message }));
       return true;

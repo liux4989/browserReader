@@ -1,4 +1,4 @@
-import { HighlightData, HighlightSettings } from './types';
+import { type HighlightData, type HighlightSettings } from './types';
 
 export class StorageManager {
   private static readonly HIGHLIGHTS_KEY = 'highlights';
