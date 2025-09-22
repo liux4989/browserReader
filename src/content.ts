@@ -640,17 +640,71 @@ class HighlightManager {
 
   private serializeRange(range: Range): SerializedRange | null {
     try {
+      // Get the actual offsets relative to the parent element
+      const startInfo = this.getContainerInfo(range.startContainer, range.startOffset);
+      const endInfo = this.getContainerInfo(range.endContainer, range.endOffset);
+
+      if (!startInfo || !endInfo) {
+        console.error('Failed to get container info for serialization');
+        return null;
+      }
+
       return {
-        startXPath: this.getSimpleXPath(range.startContainer),
-        startOffset: range.startOffset,
-        startTextIndex: 0, // Simplified - no longer needed
-        endXPath: this.getSimpleXPath(range.endContainer),
-        endOffset: range.endOffset,
-        endTextIndex: 0, // Simplified - no longer needed
+        startXPath: startInfo.xpath,
+        startOffset: startInfo.offset,
+        startTextIndex: startInfo.textIndex,
+        endXPath: endInfo.xpath,
+        endOffset: endInfo.offset,
+        endTextIndex: endInfo.textIndex,
         text: range.toString()
       };
     } catch (error) {
       console.error('Error serializing range:', error);
+      return null;
+    }
+  }
+
+  private getContainerInfo(container: Node, offset: number): { xpath: string, offset: number, textIndex: number } | null {
+    try {
+      // For text nodes, we need to find the offset relative to the parent element
+      if (container.nodeType === Node.TEXT_NODE) {
+        const parentElement = container.parentElement;
+        if (!parentElement) return null;
+
+        // Calculate the accumulated offset of text before this text node
+        let textIndex = 0;
+        let accumulatedOffset = offset;
+
+        const walker = document.createTreeWalker(
+          parentElement,
+          NodeFilter.SHOW_TEXT,
+          null
+        );
+
+        let node;
+        while (node = walker.nextNode()) {
+          if (node === container) {
+            break;
+          }
+          textIndex++;
+          accumulatedOffset += (node.textContent?.length || 0);
+        }
+
+        return {
+          xpath: this.getSimpleXPath(parentElement),
+          offset: accumulatedOffset,
+          textIndex: textIndex
+        };
+      } else {
+        // For element nodes, use as-is
+        return {
+          xpath: this.getSimpleXPath(container),
+          offset: offset,
+          textIndex: 0
+        };
+      }
+    } catch (error) {
+      console.error('Error getting container info:', error);
       return null;
     }
   }
@@ -727,8 +781,8 @@ class HighlightManager {
       const range = document.createRange();
 
       // For element containers, find the appropriate text node
-      const startContainer = this.findAppropriateContainer(startElement, serialized.startOffset);
-      const endContainer = this.findAppropriateContainer(endElement, serialized.endOffset);
+      const startContainer = this.findAppropriateContainer(startElement, serialized.startOffset, false);
+      const endContainer = this.findAppropriateContainer(endElement, serialized.endOffset, true);
 
       if (!startContainer || !endContainer) {
         console.log('Container nodes not found, trying text search');
@@ -766,8 +820,9 @@ class HighlightManager {
     }
   }
 
-  private findAppropriateContainer(element: Element, offset: number): { node: Node, offset: number } | null {
-    // Simple approach: use the first text node in the element or the element itself
+  private findAppropriateContainer(element: Element, offset: number, _isEnd: boolean = false): { node: Node, offset: number } | null {
+    // Get all text nodes in the element
+    const textNodes: Text[] = [];
     const walker = document.createTreeWalker(
       element,
       NodeFilter.SHOW_TEXT,
@@ -779,16 +834,41 @@ class HighlightManager {
       }
     );
 
-    const firstTextNode = walker.nextNode() as Text;
-    if (firstTextNode) {
-      return {
-        node: firstTextNode,
-        offset: Math.min(offset, firstTextNode.textContent?.length || 0)
-      };
+    let node;
+    while (node = walker.nextNode()) {
+      textNodes.push(node as Text);
     }
 
-    // Fallback to element itself
-    return { node: element, offset: 0 };
+    if (textNodes.length === 0) {
+      // No text nodes found, try to use element's children
+      if (element.childNodes.length > 0) {
+        const childIndex = Math.min(offset, element.childNodes.length - 1);
+        return { node: element, offset: childIndex };
+      }
+      return { node: element, offset: 0 };
+    }
+
+    // Calculate which text node contains the offset
+    let accumulatedLength = 0;
+    for (const textNode of textNodes) {
+      const textLength = textNode.textContent?.length || 0;
+      if (accumulatedLength + textLength >= offset) {
+        // This text node contains our offset
+        const nodeOffset = offset - accumulatedLength;
+        return {
+          node: textNode,
+          offset: Math.min(nodeOffset, textLength)
+        };
+      }
+      accumulatedLength += textLength;
+    }
+
+    // If offset is beyond all text nodes, use the last text node
+    const lastTextNode = textNodes[textNodes.length - 1];
+    return {
+      node: lastTextNode,
+      offset: lastTextNode.textContent?.length || 0
+    };
   }
 
   private simpleTextSearch(text: string): Range | null {
@@ -796,6 +876,23 @@ class HighlightManager {
 
     const searchText = text.trim();
 
+    // Try different search strategies
+    const strategies = [
+      () => this.exactTextSearch(searchText),
+      () => this.fuzzyTextSearch(searchText),
+      () => this.partialTextSearch(searchText)
+    ];
+
+    for (const strategy of strategies) {
+      const result = strategy();
+      if (result) return result;
+    }
+
+    console.warn('All text search strategies failed for:', searchText.substring(0, 30));
+    return null;
+  }
+
+  private exactTextSearch(searchText: string): Range | null {
     // Simple text search across all text nodes
     const walker = document.createTreeWalker(
       document.body,
@@ -822,27 +919,100 @@ class HighlightManager {
 
           // Validate the created range
           if (range.collapsed) {
-            console.warn('Text search created collapsed range, skipping');
             continue;
           }
 
           const rangeText = range.toString();
           if (!rangeText.trim()) {
-            console.warn('Text search created empty range, skipping');
             continue;
           }
 
-          console.log('✓ Text search found match:', rangeText.substring(0, 30));
+          console.log('✓ Exact text search found match:', rangeText.substring(0, 30));
           return range;
         } catch (e) {
-          console.warn('Error creating range from text search:', e);
           continue;
         }
       }
     }
 
-    console.warn('Text search failed to find match for:', searchText.substring(0, 30));
     return null;
+  }
+
+  private fuzzyTextSearch(searchText: string): Range | null {
+    // Search with normalized whitespace
+    const normalizedSearch = searchText.replace(/\s+/g, ' ');
+
+    const walker = document.createTreeWalker(
+      document.body,
+      NodeFilter.SHOW_TEXT,
+      {
+        acceptNode: (node) => {
+          return !this.isHighlightElement(node.parentElement) ?
+            NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_REJECT;
+        }
+      }
+    );
+
+    let node;
+    while (node = walker.nextNode()) {
+      const textNode = node as Text;
+      const nodeText = (textNode.textContent || '').replace(/\s+/g, ' ');
+      const index = nodeText.indexOf(normalizedSearch);
+
+      if (index !== -1) {
+        try {
+          // Find the actual positions in the original text
+          const originalText = textNode.textContent || '';
+          let actualStart = 0;
+          let normalizedPos = 0;
+
+          for (let i = 0; i < originalText.length; i++) {
+            if (normalizedPos === index) {
+              actualStart = i;
+              break;
+            }
+            if (!/\s/.test(originalText[i]) || (i === 0 || !/\s/.test(originalText[i-1]))) {
+              normalizedPos++;
+            }
+          }
+
+          const range = document.createRange();
+          range.setStart(textNode, actualStart);
+
+          // Find end position
+          let actualEnd = actualStart;
+          let matchLength = 0;
+          for (let i = actualStart; i < originalText.length && matchLength < normalizedSearch.length; i++) {
+            if (!/\s/.test(originalText[i]) || (matchLength > 0 && normalizedSearch[matchLength] === ' ')) {
+              matchLength++;
+            }
+            actualEnd = i + 1;
+          }
+
+          range.setEnd(textNode, actualEnd);
+
+          if (!range.collapsed && range.toString().trim()) {
+            console.log('✓ Fuzzy text search found match:', range.toString().substring(0, 30));
+            return range;
+          }
+        } catch (e) {
+          continue;
+        }
+      }
+    }
+
+    return null;
+  }
+
+  private partialTextSearch(searchText: string): Range | null {
+    // Try to find at least the beginning of the text
+    const words = searchText.split(/\s+/).filter(w => w.length > 2);
+    if (words.length === 0) return null;
+
+    // Try to find at least the first few words
+    const partialSearch = words.slice(0, Math.min(3, words.length)).join(' ');
+
+    return this.exactTextSearch(partialSearch);
   }
 
   private async saveHighlightToStorage(highlightData: HighlightData): Promise<void> {
