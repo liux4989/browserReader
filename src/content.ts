@@ -9,7 +9,6 @@ class HighlightManager {
   private mutationObserver: MutationObserver | null = null;
   private readonly highlightClassName = 'text-highlight';
   private inlinePopup: InlinePopup;
-  private selectionTimeout: NodeJS.Timeout | null = null;
   private storedRange: Range | null = null;
   private readonly colors = {
     yellow: 'rgba(255, 235, 59, 0.4)',
@@ -43,9 +42,6 @@ class HighlightManager {
         transition: background-color 0.2s ease;
         cursor: pointer;
         position: relative;
-      }
-      .${this.highlightClassName}:hover {
-        filter: brightness(0.9);
       }
       .${this.highlightClassName}[data-highlight-active="true"] {
         outline: 2px solid rgba(0, 0, 0, 0.3);
@@ -100,27 +96,13 @@ class HighlightManager {
   }
 
   private handleMouseDown(): void {
-    // Clear any existing selection timeout
-    if (this.selectionTimeout) {
-      clearTimeout(this.selectionTimeout);
-      this.selectionTimeout = null;
-    }
     // Hide popup when starting a new selection
     this.inlinePopup.hide();
     this.storedRange = null;
   }
 
   private handleMouseUp(): void {
-    // Clear any existing timeout
-    if (this.selectionTimeout) {
-      clearTimeout(this.selectionTimeout);
-    }
-
-    // Set a timeout to check for selection after a brief delay
-    // This allows the selection to stabilize
-    this.selectionTimeout = setTimeout(() => {
-      this.checkAndShowInlinePopup();
-    }, 200);
+    this.checkAndShowInlinePopup();
   }
 
   private checkAndShowInlinePopup(): void {
@@ -419,164 +401,79 @@ class HighlightManager {
   }
 
   private applyHighlight(range: Range, color: string, id: string): HTMLElement[] {
+    // For new user selections, apply word completion
+    return this.applyHighlightWithCompletion(range, color, id);
+  }
+
+  private applyHighlightWithCompletion(range: Range, color: string, id: string): HTMLElement[] {
     const elements: HTMLElement[] = [];
 
     try {
-      const textNodes = this.getTextNodesInRange(range);
+      // Smart word completion for partial selections
+      const expandedRange = this.completeWordSelection(range);
 
-      if (textNodes.length === 0) {
-        console.warn('No text nodes found in range, trying direct range approach');
-
-        // Last resort: try to create a highlight directly from the range
-        try {
-          // Clone the range to avoid modifying the original
-          const rangeClone = range.cloneRange();
-          const selectedText = rangeClone.toString();
-
-          if (!selectedText || selectedText.trim().length === 0) {
-            console.warn('Direct range approach: no text content');
-            return elements;
-          }
-
-          // Validate range boundaries to prevent expansion
-          if (rangeClone.collapsed) {
-            console.warn('Direct range approach: range is collapsed');
-            return elements;
-          }
-
-          console.log('Direct range approach: creating highlight for text:', selectedText.substring(0, 50));
-
-          const span = this.createHighlightElement(color, id);
-          const contents = rangeClone.extractContents();
-
-          if (contents.textContent && contents.textContent.trim().length > 0) {
-            // Verify the extracted content matches our expected text
-            const extractedText = contents.textContent.trim();
-            const originalText = selectedText.trim();
-
-            if (extractedText !== originalText) {
-              console.warn('Text mismatch in direct approach:', {
-                expected: originalText.substring(0, 50),
-                extracted: extractedText.substring(0, 50)
-              });
-              // Don't proceed if the text doesn't match
-              return elements;
-            }
-
-            span.appendChild(contents);
-            rangeClone.insertNode(span);
-            elements.push(span);
-            console.log('Successfully created highlight using direct range approach');
-            return elements;
-          }
-        } catch (directError) {
-          console.error('Direct range approach also failed:', directError);
-        }
-
+      // Validate the expanded range
+      if (expandedRange.collapsed || !expandedRange.toString().trim()) {
+        console.warn('Range is collapsed or empty after word completion');
         return elements;
       }
 
-      textNodes.forEach((textNode, index) => {
-        try {
-          const parent = textNode.parentNode;
-          if (!parent || !textNode.isConnected) {
-            console.warn(`Text node ${index} is not connected to document`);
-            return;
-          }
+      const selectedText = expandedRange.toString();
+      console.log('Creating highlight for text:', selectedText.substring(0, 50));
 
-          // Skip if parent is already a highlight element
-          if (this.isHighlightElement(parent as HTMLElement)) {
-            console.warn(`Text node ${index} parent is already a highlight element`);
-            return;
-          }
+      return this.applyHighlightDirect(expandedRange, color, id);
 
-          let startOffset = 0;
-          let endOffset = textNode.textContent?.length || 0;
-
-          if (textNode === range.startContainer) {
-            startOffset = Math.min(range.startOffset, endOffset);
-          }
-          if (textNode === range.endContainer) {
-            endOffset = Math.min(range.endOffset, textNode.textContent?.length || 0);
-          }
-
-          if (startOffset >= endOffset) {
-            console.warn(`Invalid offsets for text node ${index}: start=${startOffset}, end=${endOffset}`);
-            return;
-          }
-
-          // Additional validation: ensure we're not selecting more text than intended
-          const nodeText = textNode.textContent || '';
-          const selectedPortion = nodeText.substring(startOffset, endOffset);
-
-          // Log what we're about to highlight from this node
-          console.log(`Text node ${index} portion:`, {
-            fullNodeText: nodeText.substring(0, 50),
-            selectedPortion: selectedPortion,
-            startOffset,
-            endOffset
-          });
-
-          const span = this.createHighlightElement(color, id);
-
-          if (startOffset === 0 && endOffset === textNode.textContent?.length) {
-            // Wrap the entire text node
-            parent.insertBefore(span, textNode);
-            span.appendChild(textNode);
-          } else {
-            // Split the text node
-            const beforeText = textNode.textContent?.substring(0, startOffset) || '';
-            const highlightedText = textNode.textContent?.substring(startOffset, endOffset) || '';
-            const afterText = textNode.textContent?.substring(endOffset) || '';
-
-            if (highlightedText.length === 0) {
-              console.warn(`No text to highlight in node ${index}`);
-              return;
-            }
-
-            const beforeNode = beforeText ? document.createTextNode(beforeText) : null;
-            const highlightedNode = document.createTextNode(highlightedText);
-            const afterNode = afterText ? document.createTextNode(afterText) : null;
-
-            if (beforeNode) parent.insertBefore(beforeNode, textNode);
-            parent.insertBefore(span, textNode);
-            span.appendChild(highlightedNode);
-            if (afterNode) parent.insertBefore(afterNode, textNode);
-
-            parent.removeChild(textNode);
-          }
-
-          elements.push(span);
-        } catch (nodeError) {
-          console.error(`Error processing text node ${index}:`, nodeError);
-        }
-      });
-
-      console.log(`Applied highlight to ${elements.length}/${textNodes.length} text nodes`);
-
-      // Final validation: check if the total highlighted text matches what was selected
-      if (elements.length > 0) {
-        const highlightedText = elements.map(el => el.textContent || '').join('');
-        const originalText = range.toString();
-
-        if (highlightedText.trim() !== originalText.trim()) {
-          console.warn('Text mismatch detected:', {
-            original: originalText.substring(0, 100),
-            highlighted: highlightedText.substring(0, 100),
-            originalLength: originalText.length,
-            highlightedLength: highlightedText.length
-          });
-
-          // If there's a significant mismatch, we might have highlighted too much
-          if (highlightedText.length > originalText.length * 1.5) {
-            console.error('Highlighted text is significantly longer than selected text - this indicates a bug');
-          }
-        } else {
-          console.log('✓ Highlighted text matches selected text exactly');
-        }
-      }
     } catch (error) {
-      console.error('Error applying highlight:', error);
+      console.error('Error applying highlight with completion:', error);
+      return elements;
+    }
+  }
+
+  private applyHighlightDirect(range: Range, color: string, id: string): HTMLElement[] {
+    const elements: HTMLElement[] = [];
+
+    try {
+      // Validate range without word completion
+      if (range.collapsed || !range.toString().trim()) {
+        console.warn('Direct highlight: Range is collapsed or empty');
+        return elements;
+      }
+
+      const selectedText = range.toString();
+      console.log('Creating direct highlight for text:', selectedText.substring(0, 50));
+
+      const span = this.createHighlightElement(color, id);
+
+      // Try the simple approach first - this works for most cases
+      try {
+        range.surroundContents(span);
+        elements.push(span);
+        console.log('✓ Successfully created highlight using surroundContents');
+        return elements;
+      } catch (surroundError) {
+        // surroundContents fails when the range crosses element boundaries
+        console.log('surroundContents failed, trying extraction method');
+      }
+
+      // Fallback: use extraction method for complex selections
+      try {
+        const contents = range.extractContents();
+
+        if (!contents.textContent?.trim()) {
+          console.warn('No text content in extracted range');
+          return elements;
+        }
+
+        span.appendChild(contents);
+        range.insertNode(span);
+        elements.push(span);
+        console.log('✓ Successfully created highlight using extraction method');
+      } catch (extractError) {
+        console.error('Both highlighting methods failed:', extractError);
+      }
+
+    } catch (error) {
+      console.error('Error applying direct highlight:', error);
     }
 
     return elements;
@@ -592,214 +489,164 @@ class HighlightManager {
     return span;
   }
 
-  private getTextNodesInRange(range: Range): Text[] {
-    const textNodes: Text[] = [];
-
-    try {
-      // Handle simple case where the range is entirely within a single text node
-      if (range.startContainer === range.endContainer && range.startContainer.nodeType === Node.TEXT_NODE) {
-        const textNode = range.startContainer as Text;
-        if (!this.isHighlightElement(textNode.parentElement)) {
-          textNodes.push(textNode);
-        }
-        return textNodes;
-      }
-
-      const walker = document.createTreeWalker(
-        range.commonAncestorContainer,
-        NodeFilter.SHOW_TEXT,
-        {
-          acceptNode: (node) => {
-            try {
-              // Skip if parent is a highlight element
-              if (this.isHighlightElement(node.parentElement)) {
-                return NodeFilter.FILTER_REJECT;
-              }
-
-              // Check if this text node intersects with our range
-              const textNode = node as Text;
-
-              // More precise position-based check
-              try {
-                const textLength = textNode.textContent?.length || 0;
-
-                // Check start position
-                const startPosition = range.comparePoint(textNode, 0);
-                if (startPosition === -1) {
-                  // Node is after the range
-                  return NodeFilter.FILTER_REJECT;
-                }
-
-                // Check end position
-                const endPosition = range.comparePoint(textNode, textLength);
-                if (endPosition === 1) {
-                  // Node is before the range
-                  return NodeFilter.FILTER_REJECT;
-                }
-
-                // Additional validation for edge cases
-                if (textNode === range.startContainer) {
-                  // For start container, make sure we have content after the start offset
-                  if (range.startOffset >= textLength) {
-                    return NodeFilter.FILTER_REJECT;
-                  }
-                }
-
-                if (textNode === range.endContainer) {
-                  // For end container, make sure we have content before the end offset
-                  if (range.endOffset <= 0) {
-                    return NodeFilter.FILTER_REJECT;
-                  }
-                }
-
-                return NodeFilter.FILTER_ACCEPT;
-              } catch (compareError) {
-                console.warn('Error comparing text node position:', compareError);
-                return NodeFilter.FILTER_REJECT;
-              }
-            } catch (e) {
-              console.warn('Error checking text node intersection:', e);
-              return NodeFilter.FILTER_REJECT;
-            }
-          }
-        }
-      );
-
-      let node;
-      while (node = walker.nextNode()) {
-        textNodes.push(node as Text);
-      }
-
-      // Fallback: if no nodes found, try a different approach
-      if (textNodes.length === 0) {
-        console.warn('TreeWalker found no nodes, trying fallback approach');
-        return this.getTextNodesInRangeFallback(range);
-      }
-
-    } catch (error) {
-      console.error('Error in getTextNodesInRange:', error);
-      return this.getTextNodesInRangeFallback(range);
-    }
-
-    return textNodes;
-  }
-
-  private getTextNodesInRangeFallback(range: Range): Text[] {
-    const textNodes: Text[] = [];
-
-    try {
-      // More precise fallback approach
-      const collectTextNodes = (node: Node) => {
-        if (node.nodeType === Node.TEXT_NODE) {
-          const textNode = node as Text;
-          if (!this.isHighlightElement(textNode.parentElement) &&
-              textNode.textContent &&
-              textNode.textContent.trim().length > 0) {
-            try {
-              // More precise check: only include if the text node actually intersects with our specific range
-              if (range.intersectsNode(textNode)) {
-                // Additional validation: check if any part of this text node is actually selected
-                const nodeLength = textNode.textContent.length;
-
-                // If this is the start container, check if we're past the start offset
-                if (textNode === range.startContainer && nodeLength <= range.startOffset) {
-                  return; // This text node is before our selection
-                }
-
-                // If this is the end container, check if we're before the end offset
-                if (textNode === range.endContainer && range.endOffset <= 0) {
-                  return; // This text node is after our selection
-                }
-
-                textNodes.push(textNode);
-              }
-            } catch (e) {
-              // Only include if we're really sure about the intersection
-              console.warn('Fallback intersection check failed, skipping text node');
-            }
-          }
-        } else if (node.nodeType === Node.ELEMENT_NODE) {
-          // Don't traverse into highlight elements
-          if (!this.isHighlightElement(node as HTMLElement)) {
-            // Only traverse children if this element actually intersects with our range
-            if (range.intersectsNode(node)) {
-              for (let child of Array.from(node.childNodes)) {
-                collectTextNodes(child);
-              }
-            }
-          }
-        }
-      };
-
-      collectTextNodes(range.commonAncestorContainer);
-      console.log(`Fallback found ${textNodes.length} text nodes`);
-    } catch (error) {
-      console.error('Error in fallback text node collection:', error);
-    }
-
-    return textNodes;
-  }
-
-  private rangeIntersectsNode(range: Range, node: Node): boolean {
-    const nodeRange = document.createRange();
-    nodeRange.selectNode(node);
-
-    return !(
-      range.compareBoundaryPoints(Range.END_TO_START, nodeRange) > 0 ||
-      range.compareBoundaryPoints(Range.START_TO_END, nodeRange) < 0
-    );
-  }
 
   private rangeIntersectsHighlight(range: Range): boolean {
-    // Check if any part of the range intersects with existing highlight elements
-    const walker = document.createTreeWalker(
-      range.commonAncestorContainer,
-      NodeFilter.SHOW_ELEMENT,
-      {
-        acceptNode: (node) => {
-          const element = node as Element;
-          if (element.classList.contains(this.highlightClassName)) {
-            // Check if this highlight element intersects with our range
-            try {
-              const elementRange = document.createRange();
-              elementRange.selectNode(element);
+    // Simple check: see if any existing highlight elements intersect with the range
+    const highlightElements = document.querySelectorAll(`.${this.highlightClassName}`);
 
-              const intersects = !(
-                range.compareBoundaryPoints(Range.END_TO_START, elementRange) > 0 ||
-                range.compareBoundaryPoints(Range.START_TO_END, elementRange) < 0
-              );
-
-              return intersects ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_REJECT;
-            } catch (e) {
-              return NodeFilter.FILTER_REJECT;
-            }
-          }
-          return NodeFilter.FILTER_REJECT;
+    for (const element of highlightElements) {
+      try {
+        if (range.intersectsNode(element)) {
+          return true;
         }
+      } catch (e) {
+        // Continue checking other elements if one fails
+        continue;
       }
-    );
+    }
 
-    return walker.nextNode() !== null;
+    return false;
   }
 
   private isHighlightElement(element: HTMLElement | null): boolean {
     return element?.classList.contains(this.highlightClassName) || false;
   }
 
+  private completeWordSelection(range: Range): Range {
+    // First validate the input range
+    if (range.collapsed || !range.toString().trim()) {
+      console.warn('Input range is collapsed or empty, cannot complete words');
+      return range;
+    }
+
+    const selectedText = range.toString();
+    console.log(`Checking for word completion: "${selectedText}"`);
+
+    try {
+      // Always try to complete word boundaries, regardless of length
+      const wordCompleted = this.completeWordBoundaries(range);
+
+      // Validate the completed range
+      if (wordCompleted.collapsed) {
+        console.warn('Word completion resulted in collapsed range, using original');
+        return range;
+      }
+
+      const completedText = wordCompleted.toString();
+
+      // Validate we didn't lose content
+      if (!completedText.trim()) {
+        console.warn('Word completion resulted in empty text, using original');
+        return range;
+      }
+
+      // Only expand if we actually completed something
+      if (completedText !== selectedText) {
+        console.log(`Word completed: "${selectedText}" → "${completedText}"`);
+        return wordCompleted;
+      } else {
+        console.log('Selection already at word boundaries, no completion needed');
+        return range;
+      }
+
+    } catch (error) {
+      console.error('Error completing word boundaries:', error);
+      return range;
+    }
+  }
+
+  private completeWordBoundaries(range: Range): Range {
+    const completedRange = range.cloneRange();
+
+    // Validate that the range containers are still connected to the document
+    if (!range.startContainer.isConnected || !range.endContainer.isConnected) {
+      console.warn('Range containers not connected to document');
+      return range;
+    }
+
+    // Complete word at start if selection begins mid-word
+    this.completeWordStart(completedRange);
+
+    // Complete word at end if selection ends mid-word
+    this.completeWordEnd(completedRange);
+
+    return completedRange;
+  }
+
+  private completeWordStart(range: Range) {
+    const container = range.startContainer;
+    let offset = range.startOffset;
+
+    if (container.nodeType === Node.TEXT_NODE) {
+      const text = container.textContent || '';
+
+      // Validate offset bounds
+      if (offset < 0 || offset > text.length) {
+        console.warn('Invalid start offset in completeWordStart:', offset);
+        return;
+      }
+
+      // Check if we're already at a word boundary
+      if (offset === 0 || this.isWordBoundary(text[offset - 1])) {
+        return; // Already at word start, no completion needed
+      }
+
+      // Go backwards to find the start of the word
+      while (offset > 0 && !this.isWordBoundary(text[offset - 1])) {
+        offset--;
+      }
+
+      // Validate new offset and only update if valid
+      if (offset >= 0 && offset <= range.endOffset) {
+        range.setStart(container, offset);
+      }
+    }
+  }
+
+  private completeWordEnd(range: Range) {
+    const container = range.endContainer;
+    let offset = range.endOffset;
+
+    if (container.nodeType === Node.TEXT_NODE) {
+      const text = container.textContent || '';
+
+      // Validate offset bounds
+      if (offset < 0 || offset > text.length) {
+        console.warn('Invalid end offset in completeWordEnd:', offset);
+        return;
+      }
+
+      // Check if we're already at a word boundary
+      if (offset >= text.length || this.isWordBoundary(text[offset])) {
+        return; // Already at word end, no completion needed
+      }
+
+      // Go forwards to find the end of the word
+      while (offset < text.length && !this.isWordBoundary(text[offset])) {
+        offset++;
+      }
+
+      // Validate new offset and only update if valid
+      if (offset <= text.length && offset >= range.startOffset) {
+        range.setEnd(container, offset);
+      }
+    }
+  }
+
+  private isWordBoundary(char: string): boolean {
+    // Simple word boundary detection: whitespace and common punctuation
+    return /[\s\.,;:!?\-()[\]{}'""]/.test(char);
+  }
+
   private serializeRange(range: Range): SerializedRange | null {
     try {
-      const startInfo = this.getTextNodeInfo(range.startContainer);
-      const endInfo = this.getTextNodeInfo(range.endContainer);
-
-      if (!startInfo || !endInfo) return null;
-
       return {
-        startXPath: this.getXPath(startInfo.container),
+        startXPath: this.getSimpleXPath(range.startContainer),
         startOffset: range.startOffset,
-        startTextIndex: startInfo.textIndex,
-        endXPath: this.getXPath(endInfo.container),
+        startTextIndex: 0, // Simplified - no longer needed
+        endXPath: this.getSimpleXPath(range.endContainer),
         endOffset: range.endOffset,
-        endTextIndex: endInfo.textIndex,
+        endTextIndex: 0, // Simplified - no longer needed
         text: range.toString()
       };
     } catch (error) {
@@ -808,51 +655,39 @@ class HighlightManager {
     }
   }
 
-  private getTextNodeInfo(node: Node): { container: Element, textIndex: number } | null {
-    let container: Element;
-    let textIndex = 0;
+  private getSimpleXPath(node: Node): string {
+    try {
+      // For text nodes, get the path to the parent element
+      const element = node.nodeType === Node.TEXT_NODE ? node.parentElement : node as Element;
+      if (!element) return '';
 
-    if (node.nodeType === Node.TEXT_NODE) {
-      container = node.parentElement!;
-      if (!container) return null;
-
-      const textNodes = Array.from(container.childNodes).filter(n => n.nodeType === Node.TEXT_NODE);
-      textIndex = textNodes.indexOf(node as Text);
-    } else if (node.nodeType === Node.ELEMENT_NODE) {
-      container = node as Element;
-    } else {
-      return null;
-    }
-
-    return { container, textIndex };
-  }
-
-  private getXPath(element: Element): string {
-    if (element.id) {
-      return `//*[@id="${element.id}"]`;
-    }
-
-    const paths: string[] = [];
-    let current: Element | null = element;
-
-    while (current && current.nodeType === Node.ELEMENT_NODE) {
-      let index = 1;
-      let sibling = current.previousElementSibling;
-
-      while (sibling) {
-        if (sibling.nodeName === current.nodeName) index++;
-        sibling = sibling.previousElementSibling;
+      // Use ID if available
+      if (element.id) {
+        return `//*[@id="${element.id}"]`;
       }
 
-      const tagName = current.nodeName.toLowerCase();
-      const pathIndex = `[${index}]`;
-      paths.unshift(`${tagName}${pathIndex}`);
+      // Simple path generation - just enough to find the element again
+      const paths: string[] = [];
+      let current: Element | null = element;
 
-      current = current.parentElement;
-      if (current === document.body) break;
+      while (current && current !== document.body) {
+        let index = 1;
+        let sibling = current.previousElementSibling;
+
+        while (sibling) {
+          if (sibling.nodeName === current.nodeName) index++;
+          sibling = sibling.previousElementSibling;
+        }
+
+        paths.unshift(`${current.nodeName.toLowerCase()}[${index}]`);
+        current = current.parentElement;
+      }
+
+      return paths.length ? `//${paths.join('/')}` : '';
+    } catch (error) {
+      console.error('Error generating XPath:', error);
+      return '';
     }
-
-    return paths.length ? `//${paths.join('/')}` : '';
   }
 
   private getElementByXPath(xpath: string): Element | null {
@@ -874,50 +709,101 @@ class HighlightManager {
     try {
       const serialized = rangeData as SerializedRange;
 
+      // Validate serialized data
+      if (!serialized.text || !serialized.text.trim()) {
+        console.warn('Cannot deserialize range: no text content');
+        return null;
+      }
+
       const startElement = this.getElementByXPath(serialized.startXPath);
       const endElement = this.getElementByXPath(serialized.endXPath);
 
       if (!startElement || !endElement) {
-        return this.fuzzyMatchRange(serialized);
-      }
-
-      const startTextNode = this.getTextNodeAtIndex(startElement, serialized.startTextIndex);
-      const endTextNode = this.getTextNodeAtIndex(endElement, serialized.endTextIndex);
-
-      if (!startTextNode || !endTextNode) {
-        return this.fuzzyMatchRange(serialized);
+        // Fallback to text search
+        console.log('XPath elements not found, trying text search');
+        return this.simpleTextSearch(serialized.text);
       }
 
       const range = document.createRange();
-      range.setStart(startTextNode, Math.min(serialized.startOffset, startTextNode.textContent?.length || 0));
-      range.setEnd(endTextNode, Math.min(serialized.endOffset, endTextNode.textContent?.length || 0));
+
+      // For element containers, find the appropriate text node
+      const startContainer = this.findAppropriateContainer(startElement, serialized.startOffset);
+      const endContainer = this.findAppropriateContainer(endElement, serialized.endOffset);
+
+      if (!startContainer || !endContainer) {
+        console.log('Container nodes not found, trying text search');
+        return this.simpleTextSearch(serialized.text);
+      }
+
+      range.setStart(startContainer.node, startContainer.offset);
+      range.setEnd(endContainer.node, endContainer.offset);
+
+      // Validate the created range
+      if (range.collapsed) {
+        console.warn('Deserialized range is collapsed, trying text search');
+        return this.simpleTextSearch(serialized.text);
+      }
+
+      const rangeText = range.toString();
+      if (!rangeText.trim()) {
+        console.warn('Deserialized range has no text content, trying text search');
+        return this.simpleTextSearch(serialized.text);
+      }
+
+      // Verify the text roughly matches (allowing for some whitespace differences)
+      const normalizedOriginal = serialized.text.trim().toLowerCase();
+      const normalizedRange = rangeText.trim().toLowerCase();
+
+      if (normalizedRange !== normalizedOriginal && !normalizedRange.includes(normalizedOriginal)) {
+        console.warn('Deserialized range text mismatch, trying text search');
+        return this.simpleTextSearch(serialized.text);
+      }
 
       return range;
     } catch (error) {
       console.error('Error deserializing range:', error);
-      return null;
+      return this.simpleTextSearch(rangeData.text);
     }
   }
 
-  private getTextNodeAtIndex(element: Element, index: number): Text | null {
-    const textNodes = Array.from(element.childNodes).filter(n => n.nodeType === Node.TEXT_NODE);
-    return textNodes[index] as Text || textNodes[0] as Text || null;
+  private findAppropriateContainer(element: Element, offset: number): { node: Node, offset: number } | null {
+    // Simple approach: use the first text node in the element or the element itself
+    const walker = document.createTreeWalker(
+      element,
+      NodeFilter.SHOW_TEXT,
+      {
+        acceptNode: (node) => {
+          return !this.isHighlightElement(node.parentElement) ?
+            NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_REJECT;
+        }
+      }
+    );
+
+    const firstTextNode = walker.nextNode() as Text;
+    if (firstTextNode) {
+      return {
+        node: firstTextNode,
+        offset: Math.min(offset, firstTextNode.textContent?.length || 0)
+      };
+    }
+
+    // Fallback to element itself
+    return { node: element, offset: 0 };
   }
 
-  private fuzzyMatchRange(serialized: SerializedRange): Range | null {
-    const searchText = serialized.text.toLowerCase().trim();
-    if (!searchText) return null;
+  private simpleTextSearch(text: string): Range | null {
+    if (!text || !text.trim()) return null;
 
+    const searchText = text.trim();
+
+    // Simple text search across all text nodes
     const walker = document.createTreeWalker(
       document.body,
       NodeFilter.SHOW_TEXT,
       {
         acceptNode: (node) => {
-          const parent = node.parentElement;
-          if (this.isHighlightElement(parent)) {
-            return NodeFilter.FILTER_REJECT;
-          }
-          return NodeFilter.FILTER_ACCEPT;
+          return !this.isHighlightElement(node.parentElement) ?
+            NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_REJECT;
         }
       }
     );
@@ -925,21 +811,37 @@ class HighlightManager {
     let node;
     while (node = walker.nextNode()) {
       const textNode = node as Text;
-      const text = textNode.textContent?.toLowerCase() || '';
-      const index = text.indexOf(searchText);
+      const nodeText = textNode.textContent || '';
+      const index = nodeText.indexOf(searchText);
 
       if (index !== -1) {
         try {
           const range = document.createRange();
           range.setStart(textNode, index);
-          range.setEnd(textNode, index + serialized.text.length);
+          range.setEnd(textNode, index + searchText.length);
+
+          // Validate the created range
+          if (range.collapsed) {
+            console.warn('Text search created collapsed range, skipping');
+            continue;
+          }
+
+          const rangeText = range.toString();
+          if (!rangeText.trim()) {
+            console.warn('Text search created empty range, skipping');
+            continue;
+          }
+
+          console.log('✓ Text search found match:', rangeText.substring(0, 30));
           return range;
         } catch (e) {
+          console.warn('Error creating range from text search:', e);
           continue;
         }
       }
     }
 
+    console.warn('Text search failed to find match for:', searchText.substring(0, 30));
     return null;
   }
 
@@ -976,10 +878,13 @@ class HighlightManager {
         try {
           const range = this.deserializeRange(highlightData.range);
           if (range && !this.isRangeAlreadyHighlighted(range, highlightData.id)) {
-            const elements = this.applyHighlight(range, highlightData.color, highlightData.id);
-            this.highlights.set(highlightData.id, highlightData);
-            this.highlightElements.set(highlightData.id, elements);
-            restoredCount++;
+            // Use direct highlighting for restoration (skip word completion)
+            const elements = this.applyHighlightDirect(range, highlightData.color, highlightData.id);
+            if (elements.length > 0) {
+              this.highlights.set(highlightData.id, highlightData);
+              this.highlightElements.set(highlightData.id, elements);
+              restoredCount++;
+            }
           }
         } catch (error) {
           console.warn(`Failed to restore highlight ${highlightData.id}:`, error);
@@ -1009,8 +914,11 @@ class HighlightManager {
         if (highlightData) {
           const range = this.deserializeRange(highlightData.range);
           if (range && !this.isRangeAlreadyHighlighted(range, id)) {
-            const newElements = this.applyHighlight(range, highlightData.color, id);
-            this.highlightElements.set(id, newElements);
+            // Use direct highlighting for restoration (skip word completion)
+            const newElements = this.applyHighlightDirect(range, highlightData.color, id);
+            if (newElements.length > 0) {
+              this.highlightElements.set(id, newElements);
+            }
           }
         }
       }

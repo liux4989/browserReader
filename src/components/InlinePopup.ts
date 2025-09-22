@@ -54,10 +54,6 @@ export class InlinePopup {
         padding: 0;
       }
 
-      .inline-color-btn:hover {
-        border-color: #333;
-        transform: scale(1.1);
-      }
 
       .inline-color-btn:active {
         transform: scale(0.95);
@@ -103,11 +99,6 @@ export class InlinePopup {
         padding: 0;
       }
 
-      .inline-delete-btn:hover {
-        background: #ff0000;
-        border-color: #ff0000;
-        transform: scale(1.1);
-      }
 
       .inline-delete-btn:active {
         transform: scale(0.95);
@@ -208,12 +199,6 @@ export class InlinePopup {
       this.popup?.classList.add('visible');
     });
 
-    // Auto-hide after 10 seconds of inactivity
-    setTimeout(() => {
-      if (this.popup && !this.popup.matches(':hover')) {
-        this.hide();
-      }
-    }, 10000);
   }
 
   private positionPopup(selectionRect: DOMRect): void {

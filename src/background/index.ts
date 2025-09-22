@@ -14,8 +14,8 @@ class BackgroundService {
 
   private setupContextMenus(): void {
     chrome.runtime.onInstalled.addListener(() => {
-      console.log('Setting up context menus...');
-      
+      console.log('Setting up context menu...');
+
       chrome.contextMenus.create({
         id: 'highlight-text',
         title: 'Highlight Selected Text',
@@ -29,87 +29,9 @@ class BackgroundService {
       });
 
       chrome.contextMenus.create({
-        id: 'highlight-yellow',
-        title: 'Yellow Highlight',
-        contexts: ['selection'],
-        parentId: 'highlight-text'
-      }, () => {
-        if (chrome.runtime.lastError) {
-          console.error('Error creating yellow highlight menu:', chrome.runtime.lastError);
-        }
-      });
-
-      chrome.contextMenus.create({
-        id: 'highlight-green',
-        title: 'Green Highlight',
-        contexts: ['selection'],
-        parentId: 'highlight-text'
-      }, () => {
-        if (chrome.runtime.lastError) {
-          console.error('Error creating green highlight menu:', chrome.runtime.lastError);
-        }
-      });
-
-      chrome.contextMenus.create({
-        id: 'highlight-blue',
-        title: 'Blue Highlight',
-        contexts: ['selection'],
-        parentId: 'highlight-text'
-      }, () => {
-        if (chrome.runtime.lastError) {
-          console.error('Error creating blue highlight menu:', chrome.runtime.lastError);
-        }
-      });
-
-      chrome.contextMenus.create({
-        id: 'highlight-pink',
-        title: 'Pink Highlight',
-        contexts: ['selection'],
-        parentId: 'highlight-text'
-      }, () => {
-        if (chrome.runtime.lastError) {
-          console.error('Error creating pink highlight menu:', chrome.runtime.lastError);
-        }
-      });
-
-      chrome.contextMenus.create({
-        id: 'highlight-orange',
-        title: 'Orange Highlight',
-        contexts: ['selection'],
-        parentId: 'highlight-text'
-      }, () => {
-        if (chrome.runtime.lastError) {
-          console.error('Error creating orange highlight menu:', chrome.runtime.lastError);
-        }
-      });
-
-      chrome.contextMenus.create({
-        id: 'highlight-purple',
-        title: 'Purple Highlight',
-        contexts: ['selection'],
-        parentId: 'highlight-text'
-      }, () => {
-        if (chrome.runtime.lastError) {
-          console.error('Error creating purple highlight menu:', chrome.runtime.lastError);
-        }
-      });
-
-      chrome.contextMenus.create({
-        id: 'separator',
-        type: 'separator',
-        contexts: ['selection'],
-        parentId: 'highlight-text'
-      }, () => {
-        if (chrome.runtime.lastError) {
-          console.error('Error creating separator:', chrome.runtime.lastError);
-        }
-      });
-
-      chrome.contextMenus.create({
         id: 'manage-highlights',
         title: 'Manage Highlights',
-        contexts: ['selection'],
-        parentId: 'highlight-text'
+        contexts: ['selection']
       }, () => {
         if (chrome.runtime.lastError) {
           console.error('Error creating manage highlights menu:', chrome.runtime.lastError);
@@ -130,21 +52,12 @@ class BackgroundService {
   ): Promise<void> {
     if (!tab?.id) return;
 
-    const colorMap: Record<string, HighlightColor> = {
-      'highlight-yellow': 'yellow',
-      'highlight-green': 'green',
-      'highlight-blue': 'blue',
-      'highlight-pink': 'pink',
-      'highlight-orange': 'orange',
-      'highlight-purple': 'purple'
-    };
-
-    if (info.menuItemId in colorMap) {
+    if (info.menuItemId === 'highlight-text') {
       try {
-        console.log('Sending highlight message to tab:', tab.id, 'Color:', colorMap[info.menuItemId as string]);
+        console.log('Sending highlight message to tab:', tab.id);
         const response = await chrome.tabs.sendMessage(tab.id, {
           type: 'CREATE_HIGHLIGHT',
-          color: colorMap[info.menuItemId as string]
+          color: 'yellow' // Default color
         });
         console.log('Response from content script:', response);
       } catch (error) {
