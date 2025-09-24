@@ -14,6 +14,7 @@ export class InlinePopup {
 
   constructor() {
     this.injectStyles();
+    this.setupGlobalClickHandler();
   }
 
   private injectStyles(): void {
@@ -21,7 +22,10 @@ export class InlinePopup {
     style.id = 'inline-popup-styles';
     style.textContent = `
       .inline-highlight-popup {
-        position: absolute;
+        position: fixed;
+        bottom: 20px;
+        left: 50%;
+        transform: translateX(-50%);
         background: white;
         border: 1px solid #e0e0e0;
         border-radius: 8px;
@@ -32,13 +36,15 @@ export class InlinePopup {
         gap: 4px;
         transition: opacity 0.2s ease, transform 0.2s ease;
         opacity: 0;
-        transform: scale(0.9);
+        transform: translateX(-50%) translateY(20px);
         pointer-events: none;
+        max-width: calc(100vw - 40px);
+        overflow-x: auto;
       }
 
       .inline-highlight-popup.visible {
         opacity: 1;
-        transform: scale(1);
+        transform: translateX(-50%) translateY(0);
         pointer-events: auto;
       }
 
@@ -52,6 +58,7 @@ export class InlinePopup {
         position: relative;
         background: none;
         padding: 0;
+        flex-shrink: 0;
       }
 
 
@@ -70,18 +77,6 @@ export class InlinePopup {
         background-color: var(--color);
       }
 
-      .inline-popup-arrow {
-        position: absolute;
-        bottom: -6px;
-        left: 50%;
-        transform: translateX(-50%) rotate(-45deg);
-        width: 12px;
-        height: 6px;
-        background: white;
-        border-left: 1px solid #e0e0e0;
-        border-bottom: 1px solid #e0e0e0;
-      }
-
       .inline-delete-btn {
         width: 32px;
         height: 32px;
@@ -97,6 +92,7 @@ export class InlinePopup {
         font-size: 14px;
         font-weight: bold;
         padding: 0;
+        flex-shrink: 0;
       }
 
 
@@ -109,12 +105,21 @@ export class InlinePopup {
         height: 24px;
         background: #e0e0e0;
         margin: 4px 2px;
+        flex-shrink: 0;
       }
     `;
 
     if (!document.getElementById('inline-popup-styles')) {
       document.head.appendChild(style);
     }
+  }
+
+  private setupGlobalClickHandler(): void {
+    document.addEventListener('click', (event) => {
+      if (this.popup && !this.popup.contains(event.target as Node)) {
+        this.hide();
+      }
+    });
   }
 
   public show(selection: Selection, onColorSelect: (color: HighlightColor) => void, onDelete?: () => void): void {
@@ -130,10 +135,7 @@ export class InlinePopup {
     this.popup = document.createElement('div');
     this.popup.className = 'inline-highlight-popup';
 
-    // Add arrow
-    const arrow = document.createElement('div');
-    arrow.className = 'inline-popup-arrow';
-    this.popup.appendChild(arrow);
+    // No arrow needed for docked bottom positioning
 
     // Add color buttons
     this.colors.forEach(color => {
@@ -191,9 +193,6 @@ export class InlinePopup {
 
     document.body.appendChild(this.popup);
 
-    // Position the popup
-    this.positionPopup(rect);
-
     // Show with animation
     requestAnimationFrame(() => {
       this.popup?.classList.add('visible');
@@ -201,40 +200,6 @@ export class InlinePopup {
 
   }
 
-  private positionPopup(selectionRect: DOMRect): void {
-    if (!this.popup) return;
-
-    const popupRect = this.popup.getBoundingClientRect();
-    const viewportWidth = window.innerWidth;
-    const scrollX = window.scrollX;
-    const scrollY = window.scrollY;
-
-    // Calculate ideal position (above the selection, centered)
-    let left = selectionRect.left + selectionRect.width / 2 - popupRect.width / 2;
-    let top = selectionRect.top - popupRect.height - 10;
-
-    // Adjust horizontal position if popup goes outside viewport
-    if (left < 10) {
-      left = 10;
-    } else if (left + popupRect.width > viewportWidth - 10) {
-      left = viewportWidth - popupRect.width - 10;
-    }
-
-    // If popup would go above viewport, position it below the selection
-    if (top < 10) {
-      top = selectionRect.bottom + 10;
-      // Flip arrow direction for bottom positioning
-      const arrow = this.popup.querySelector('.inline-popup-arrow') as HTMLElement;
-      if (arrow) {
-        arrow.style.bottom = 'auto';
-        arrow.style.top = '-6px';
-        arrow.style.transform = 'translateX(-50%) rotate(135deg)';
-      }
-    }
-
-    this.popup.style.left = `${left + scrollX}px`;
-    this.popup.style.top = `${top + scrollY}px`;
-  }
 
   public hide(): void {
     if (this.popup) {
