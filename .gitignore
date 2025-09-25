@@ -30,6 +30,14 @@ dist/
 .plasmo
 
 # typescript
-.tsbuildinfo
+*.tsbuildinfo
 .env
 .mcp.json
+
+# AI assistant configs
+.kiro/
+.conductor/
+.claude/
+
+# development test files
+test-content-script.html

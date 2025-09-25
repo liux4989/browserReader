@@ -1,5 +1,5 @@
-import { type HighlightData, type SerializedRange } from './utils/types';
-import { InlinePopup } from './components/InlinePopup';
+import { type HighlightData, type SerializedRange } from '../utils/types';
+import { InlinePopup } from './InlinePopup';
 
 console.log('Content script loaded!');
 
@@ -106,16 +106,36 @@ class HighlightManager {
   }
 
   private checkAndShowInlinePopup(): void {
+    console.log('🔍 checkAndShowInlinePopup called');
     const selection = window.getSelection();
-    if (!selection || selection.isCollapsed || selection.toString().trim().length === 0) {
+
+    if (!selection) {
+      console.log('❌ No selection object');
       this.inlinePopup.hide();
       this.storedRange = null;
       return;
     }
 
+    if (selection.isCollapsed) {
+      console.log('❌ Selection is collapsed');
+      this.inlinePopup.hide();
+      this.storedRange = null;
+      return;
+    }
+
+    const selectedText = selection.toString();
+    if (selectedText.trim().length === 0) {
+      console.log('❌ Selection has no text content');
+      this.inlinePopup.hide();
+      this.storedRange = null;
+      return;
+    }
+
+    console.log('✅ Valid selection found:', selectedText.substring(0, 50) + '...');
+
     // Validate selection range
     if (!selection.rangeCount) {
-      console.warn('No ranges in selection');
+      console.warn('❌ No ranges in selection');
       this.inlinePopup.hide();
       this.storedRange = null;
       return;
@@ -125,16 +145,19 @@ class HighlightManager {
 
     // Additional validation
     if (!range.startContainer.isConnected || !range.endContainer.isConnected) {
-      console.warn('Selection range containers are not connected to document');
+      console.warn('❌ Selection range containers are not connected to document');
       this.inlinePopup.hide();
       this.storedRange = null;
       return;
     }
 
+    console.log('✅ Range containers are connected to document');
+
     // Check if selection is on an existing highlight
     const existingHighlight = this.getHighlightFromSelection(selection);
 
     if (existingHighlight) {
+      console.log('✅ Selection is on existing highlight:', existingHighlight);
       // Show popup with delete option for existing highlight
       this.inlinePopup.show(
         selection,
@@ -152,13 +175,15 @@ class HighlightManager {
         }
       );
     } else {
+      console.log('✅ Selection is on new text, preparing to show popup');
       // Store the current selection range before showing popup
       try {
         this.storedRange = range.cloneRange();
+        console.log('✅ Range cloned successfully');
 
         // Double-check the stored range is valid
         if (!this.storedRange || this.storedRange.collapsed) {
-          console.warn('Stored range is invalid or collapsed');
+          console.warn('❌ Stored range is invalid or collapsed');
           this.storedRange = null;
           this.inlinePopup.hide();
           return;
@@ -167,11 +192,13 @@ class HighlightManager {
         // Additional validation
         const rangeText = this.storedRange.toString();
         if (!rangeText || rangeText.trim().length === 0) {
-          console.warn('Stored range contains no text');
+          console.warn('❌ Stored range contains no text');
           this.storedRange = null;
           this.inlinePopup.hide();
           return;
         }
+
+        console.log('✅ Stored range is valid:', rangeText.substring(0, 30) + '...');
 
         console.log('Stored range for highlighting:', {
           text: rangeText,
@@ -182,13 +209,16 @@ class HighlightManager {
         });
 
         // Show the inline popup for new highlight
+        console.log('🎯 Calling inlinePopup.show()...');
         this.inlinePopup.show(selection, (color) => {
+          console.log('🎨 Color selected:', color);
           this.createHighlightFromStoredRange(color).catch(error => {
             console.error('Failed to create highlight:', error);
             // Show a user-friendly error message
             console.warn('Highlight creation failed. Please try selecting the text again.');
           });
         });
+        console.log('✅ inlinePopup.show() completed');
       } catch (cloneError) {
         console.error('Failed to clone range:', cloneError);
         this.storedRange = null;

@@ -123,14 +123,22 @@ export class InlinePopup {
   }
 
   public show(selection: Selection, onColorSelect: (color: HighlightColor) => void, onDelete?: () => void): void {
+    console.log('🎪 InlinePopup.show() called');
     this.hide();
 
-    if (!selection.rangeCount || selection.isCollapsed) return;
+    if (!selection.rangeCount || selection.isCollapsed) {
+      console.log('❌ InlinePopup: Invalid selection - no ranges or collapsed');
+      return;
+    }
 
     const range = selection.getRangeAt(0);
     const rect = range.getBoundingClientRect();
+    console.log('🎪 Selection rect:', rect);
 
-    if (rect.width === 0 && rect.height === 0) return;
+    if (rect.width === 0 && rect.height === 0) {
+      console.log('❌ InlinePopup: Selection rect has no dimensions');
+      return;
+    }
 
     this.popup = document.createElement('div');
     this.popup.className = 'inline-highlight-popup';
@@ -191,11 +199,18 @@ export class InlinePopup {
       this.popup.appendChild(deleteButton);
     }
 
+    console.log('🎪 Adding popup to document body');
     document.body.appendChild(this.popup);
 
     // Show with animation
+    console.log('🎪 Starting animation to show popup');
     requestAnimationFrame(() => {
-      this.popup?.classList.add('visible');
+      if (this.popup) {
+        this.popup.classList.add('visible');
+        console.log('✅ Popup animation started - popup should be visible now');
+      } else {
+        console.log('❌ Popup element was null during animation');
+      }
     });
 
   }
